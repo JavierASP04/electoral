@@ -1,0 +1,38 @@
+services:
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      PORT: "8000"
+      SECRET_KEY: ${SECRET_KEY:-consulta-popular-dev-key}
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-consulta_popular}
+      MYSQL_USER: ${MYSQL_USER:-consulta}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-consulta_local}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped
+
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-consulta_popular}
+      MYSQL_USER: ${MYSQL_USER:-consulta}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-consulta_local}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-consulta_root_local}
+    command: --max-allowed-packet=32M
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u$$MYSQL_USER -p$$MYSQL_PASSWORD --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 25s
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
