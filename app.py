@@ -8,7 +8,7 @@ from urllib.parse import unquote, urlparse
 import pymysql
 from flask import Flask, render_template, request, session
 from pymysql.err import IntegrityError
-from werkzeug.exceptions import RequestEntityTooLarge
+from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
 from werkzeug.utils import secure_filename
 
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
@@ -51,23 +51,39 @@ CREATE TABLE IF NOT EXISTS registros (
 
 def db_settings():
     url = (os.environ.get("DATABASE_URL") or os.environ.get("MYSQL_URL") or "").strip()
+    url = url.strip('"').strip("'")
     if url:
         if "://" in url and not url.startswith("mysql://"):
             scheme, rest = url.split("://", 1)
             if scheme.startswith("mysql"):
                 url = "mysql://" + rest
         parsed = urlparse(url)
+        try:
+            port = parsed.port or 3306
+        except ValueError as exc:
+            raise pymysql.err.OperationalError(
+                2003,
+                "DATABASE_URL no es válida. Si la contraseña tiene @, # u otros signos, "
+                "codifícalos o usa MYSQL_HOST, MYSQL_PORT, MYSQL_USER, MYSQL_PASSWORD y MYSQL_DATABASE por separado.",
+            ) from exc
         return {
             "host": parsed.hostname or "127.0.0.1",
-            "port": parsed.port or 3306,
+            "port": port,
             "user": unquote(parsed.username or ""),
             "password": unquote(parsed.password or ""),
             "database": unquote(parsed.path.lstrip("/")),
         }
 
+    raw_port = (os.environ.get("MYSQL_PORT") or "3306").strip()
+    try:
+        port = int(raw_port)
+    except ValueError as exc:
+        raise pymysql.err.OperationalError(
+            2003, "MYSQL_PORT debe ser un número, por ejemplo 3306."
+        ) from exc
     return {
         "host": os.environ.get("MYSQL_HOST", "127.0.0.1"),
-        "port": int(os.environ.get("MYSQL_PORT", "3306")),
+        "port": port,
         "user": os.environ.get("MYSQL_USER", "consulta"),
         "password": os.environ.get("MYSQL_PASSWORD", ""),
         "database": os.environ.get("MYSQL_DATABASE", "consulta_popular"),
@@ -151,14 +167,40 @@ def csrf_ok():
     return secrets.compare_digest(sent, saved)
 
 
-def render_page(cedula="", error=None, success=False, status=200):
+def describe_exception(exc):
+    text = f"{type(exc).__name__}: {exc}".strip()
+    text = re.sub(r"(?i)(password|pwd|passwd)=([^\s&]+)", r"\1=***", text)
+    return text[:800]
+
+
+def render_page(cedula="", error=None, detail=None, success=False, status=200):
     return render_template(
         "index.html",
         csrf_token=csrf_token(),
         cedula=cedula,
         error=error,
+        detail=detail,
         success=success,
     ), status
+
+
+def report_failure(cedula, message, exc, status):
+    detail = describe_exception(exc)
+    app.logger.error("CAUSA DEL ERROR AL ENVIAR: %s", detail)
+    try:
+        settings = db_settings()
+    except Exception as config_exc:
+        app.logger.error("Configuración MySQL ilegible: %s", describe_exception(config_exc))
+    else:
+        app.logger.error(
+            "MySQL host=%s port=%s user=%s database=%s",
+            settings.get("host"),
+            settings.get("port"),
+            settings.get("user"),
+            settings.get("database"),
+        )
+    app.logger.exception("Traza completa del envío")
+    return render_page(cedula=cedula, error=message, detail=detail, status=status)
 
 
 def save_registro(cedula, image_bytes, filename, mime):
@@ -237,12 +279,19 @@ def submit():
             error="Esta cédula ya fue registrada.",
             status=409,
         )
-    except pymysql.MySQLError:
-        log.exception("No se pudo guardar el registro")
-        return render_page(
-            cedula=cedula,
-            error="No se pudo conectar con la base de datos. Inténtalo de nuevo en unos minutos.",
-            status=503,
+    except pymysql.MySQLError as exc:
+        return report_failure(
+            cedula,
+            "No se pudo guardar en la base de datos.",
+            exc,
+            503,
+        )
+    except Exception as exc:
+        return report_failure(
+            cedula,
+            "Ocurrió un error al enviar el formulario.",
+            exc,
+            500,
         )
 
     return render_page(success=True)
@@ -251,6 +300,24 @@ def submit():
 @app.errorhandler(RequestEntityTooLarge)
 def too_large(_error):
     return render_page(error="La imagen supera el máximo de 8 MB.", status=413)
+
+
+@app.errorhandler(Exception)
+def unexpected(exc):
+    if isinstance(exc, HTTPException):
+        return exc
+    detail = describe_exception(exc)
+    app.logger.error("CAUSA DEL ERROR AL ENVIAR: %s", detail)
+    app.logger.exception("Traza completa del envío")
+    try:
+        return render_page(
+            error="Ocurrió un error al enviar el formulario.",
+            detail=detail,
+            status=500,
+        )
+    except Exception:
+        app.logger.exception("No se pudo mostrar la página de error")
+        return detail, 500
 
 
 if __name__ == "__main__":

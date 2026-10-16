@@ -31,7 +31,13 @@
           </div>
         {% else %}
           {% if error %}
-            <p class="alert" role="alert">{{ error }}</p>
+            <div class="alert" role="alert">
+              <p class="alert-title">{{ error }}</p>
+              {% if detail %}
+                <p class="alert-label">Qué falló</p>
+                <pre class="alert-detail">{{ detail }}</pre>
+              {% endif %}
+            </div>
           {% endif %}
 
           <form method="post" action="{{ url_for('submit') }}" enctype="multipart/form-data" novalidate>
