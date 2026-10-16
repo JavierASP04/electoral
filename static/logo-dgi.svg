@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 120" role="img" aria-label="DGI Direccion General de Informatica">
+  <rect x="2" y="14" width="128" height="92" rx="18" fill="#ffffff" stroke="#12315c" stroke-width="3.5"/>
+  <text x="16" y="78" fill="#12315c" font-family="Arial, Helvetica, sans-serif" font-size="48" font-weight="800">DG</text>
+  <text x="84" y="78" fill="#12315c" font-family="Arial, Helvetica, sans-serif" font-size="48" font-weight="800">I</text>
+  <rect x="102" y="28" width="12" height="12" rx="2" fill="#7cb342"/>
+  <rect x="148" y="22" width="4" height="76" rx="2" fill="#7cb342"/>
+  <text x="166" y="44" fill="#12315c" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700">DIRECCI&#211;N GENERAL</text>
+  <text x="166" y="74" fill="#12315c" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700">DE</text>
+  <text x="166" y="104" fill="#12315c" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700">INFORM&#193;TICA</text>
+</svg>
