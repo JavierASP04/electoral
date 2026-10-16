@@ -6,7 +6,7 @@ Formulario con dos campos, cédula e imagen. Los dos se guardan en MySQL. La ima
 
 1. Conecta este repositorio en Coolify: **New Resource → Application**.
 2. Rama `main`. Build pack: **Dockerfile**.
-3. La app escucha en la variable `PORT`. Si Coolify no la define, usa el puerto **8000**. Health check: `/health`.
+3. La app escucha en la variable `PORT`. Si Coolify no la define, usa el puerto **8005**. En Coolify, **Ports Exposes** debe ser `8005`. Health check: `/health`.
 4. En el mismo proyecto crea **Database → MySQL** y una base, por ejemplo `consulta_popular`.
 5. En la aplicación agrega estas variables. El host es el nombre interno que Coolify muestra en la base, no `localhost`.
 
@@ -35,4 +35,4 @@ Cada cédula solo puede registrarse una vez. Si se envía de nuevo, el formulari
 docker compose up --build
 ```
 
-Abre `http://localhost:8000`. Las claves de ese compose son solo para pruebas. Cámbialas antes de exponer el servicio.
+Abre `http://localhost:8005`. Las claves de ese compose son solo para pruebas. Cámbialas antes de exponer el servicio.

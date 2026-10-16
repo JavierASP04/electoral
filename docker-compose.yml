@@ -2,9 +2,9 @@ services:
   web:
     build: .
     ports:
-      - "8000:8000"
+      - "8005:8005"
     environment:
-      PORT: "8000"
+      PORT: "8005"
       SECRET_KEY: ${SECRET_KEY:-consulta-popular-dev-key}
       MYSQL_HOST: mysql
       MYSQL_PORT: "3306"

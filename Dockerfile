@@ -2,7 +2,7 @@ FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PORT=8000
+    PORT=8005
 
 WORKDIR /app
 
@@ -17,6 +17,6 @@ COPY static ./static
 
 USER appuser
 
-EXPOSE 8000
+EXPOSE 8005
 
-CMD ["sh", "-c", "exec gunicorn --bind 0.0.0.0:${PORT:-8000} --workers 2 --timeout 120 --access-logfile - --error-logfile - app:app"]
+CMD ["sh", "-c", "exec gunicorn --bind 0.0.0.0:${PORT:-8005} --workers 2 --timeout 120 --access-logfile - --error-logfile - app:app"]
