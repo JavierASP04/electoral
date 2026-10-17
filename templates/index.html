@@ -33,7 +33,7 @@
         <div class="header-inner">
           <p class="kicker">Octubre 2026</p>
           <h1>Consulta Popular Octubre 2026</h1>
-          <p class="lede">Escribe tu cédula y adjunta una imagen.</p>
+          <p class="lede">Escribe tu cédula y toma una foto.</p>
         </div>
         <svg class="wave" viewBox="0 0 360 48" preserveAspectRatio="none" aria-hidden="true">
           <path d="M0 24c40 16 70-16 120-8s70 22 120 8 70-20 120-6v30H0V24z" fill="#f4f7fb"/>
@@ -53,7 +53,7 @@
                 </svg>
               </div>
               <h2>Registro guardado</h2>
-              <p>La cédula y la imagen quedaron almacenadas.</p>
+              <p>La cédula y la foto quedaron almacenadas.</p>
               <a class="button" href="{{ url_for('index') }}">Nuevo registro</a>
             </div>
           {% else %}
@@ -94,13 +94,14 @@
               </div>
 
               <div class="field">
-                <span class="label" id="imagen-label"><span class="step">2</span> Imagen</span>
+                <span class="label" id="imagen-label"><span class="step">2</span> Foto</span>
                 <label class="dropzone" id="dropzone" for="imagen">
                   <input
                     id="imagen"
                     name="imagen"
                     type="file"
-                    accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif,.jpg,.jpeg,.png,.webp,.gif,.heic,.heif"
+                    accept="image/*"
+                    capture="environment"
                     aria-labelledby="imagen-label"
                     required
                   >
@@ -110,17 +111,17 @@
                       <circle cx="12" cy="12.5" r="3.1" fill="none" stroke="currentColor" stroke-width="1.6"/>
                     </svg>
                   </span>
-                  <span class="dropzone-title">Toca para elegir una imagen</span>
+                  <span class="dropzone-title">Toca para tomar la foto</span>
                   <span class="dropzone-hint" id="file-hint">
-                    <span id="file-name">JPG, PNG, WEBP, GIF o HEIC</span>
+                    <span id="file-name">Se abre la cámara</span>
                     <span id="file-size">máximo 8 MB</span>
                   </span>
-                  <img id="preview" alt="Vista previa de la imagen seleccionada" hidden>
+                  <img id="preview" alt="Vista previa de la foto" hidden>
                 </label>
               </div>
 
               <button type="submit">Enviar</button>
-              <p class="note">Solo se guardan la cédula y la imagen.</p>
+              <p class="note">Solo se guardan la cédula y la foto.</p>
             </form>
           {% endif %}
         </section>
@@ -156,7 +157,7 @@
             preview.hidden = true;
             preview.removeAttribute("src");
             dropzone.classList.remove("has-file");
-            fileName.textContent = "JPG, PNG, WEBP, GIF o HEIC";
+            fileName.textContent = "Se abre la cámara";
             fileSize.hidden = false;
             return;
           }

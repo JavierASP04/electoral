@@ -251,7 +251,7 @@ def submit():
 
     upload = request.files.get("imagen")
     if upload is None or not upload.filename:
-        return render_page(cedula=cedula, error="Adjunta una imagen.", status=400)
+        return render_page(cedula=cedula, error="Toma una foto con la cámara.", status=400)
 
     data = upload.read()
     if not data:
