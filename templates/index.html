@@ -52,8 +52,8 @@
                   <path d="M5 12.5 9.2 17 19 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
               </div>
-              <h2>Registro guardado</h2>
-              <p>La cédula y la foto quedaron almacenadas.</p>
+              <h2>{{ "Cédula ya registrada" if already else "Registro guardado" }}</h2>
+              <p>{{ "Esta cédula ya tenía una foto guardada. No hace falta enviarla otra vez." if already else "La cédula y la foto quedaron almacenadas." }}</p>
               <a class="button" href="{{ url_for('index') }}">Nuevo registro</a>
             </div>
           {% else %}
@@ -146,6 +146,7 @@
       let pending = Promise.resolve();
       let ticket = 0;
       let previewUrl = "";
+      let blockSend = false;
 
       function formatSize(bytes) {
         if (bytes < 1024 * 1024) return Math.max(1, Math.round(bytes / 1024)) + " KB";
@@ -160,23 +161,71 @@
         dropzone.classList.remove("has-file");
       }
 
+      function jpegFile(blob) {
+        return new File([blob], "foto.jpg", { type: "image/jpeg", lastModified: Date.now() });
+      }
+
       async function compressFile(file) {
         if (file.type === "image/jpeg" && file.size <= 350 * 1024) return file;
         const bitmap = await createImageBitmap(file);
         try {
-          const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
+          const scale = Math.min(1, 1280 / Math.max(bitmap.width, bitmap.height));
           const width = Math.max(1, Math.round(bitmap.width * scale));
           const height = Math.max(1, Math.round(bitmap.height * scale));
           const canvas = document.createElement("canvas");
           canvas.width = width;
           canvas.height = height;
           canvas.getContext("2d", { alpha: false }).drawImage(bitmap, 0, 0, width, height);
-          const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.72));
-          if (!blob || blob.size >= file.size) return file;
-          return new File([blob], "foto.jpg", { type: "image/jpeg", lastModified: Date.now() });
+          let blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.62));
+          if (blob && blob.size > 900 * 1024) {
+            blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.45));
+          }
+          if (!blob) return file;
+          if (blob.size > 1400 * 1024) {
+            const error = new Error("heavy");
+            throw error;
+          }
+          if (blob.size >= file.size && file.size <= 1400 * 1024) return file;
+          return jpegFile(blob);
         } finally {
           bitmap.close();
         }
+      }
+
+      function showFormError(message, detail) {
+        let alert = document.querySelector(".card .alert");
+        if (!alert) {
+          alert = document.createElement("div");
+          alert.className = "alert";
+          alert.setAttribute("role", "alert");
+          alert.innerHTML = '<p class="alert-title"></p>';
+          form.before(alert);
+        }
+        alert.querySelector(".alert-title").textContent = message;
+        const oldDetail = alert.querySelector(".alert-detail");
+        const oldLabel = alert.querySelector(".alert-label");
+        if (oldDetail) oldDetail.remove();
+        if (oldLabel) oldLabel.remove();
+        if (detail) {
+          const label = document.createElement("p");
+          label.className = "alert-label";
+          label.textContent = "Qué falló";
+          const pre = document.createElement("pre");
+          pre.className = "alert-detail";
+          pre.textContent = detail;
+          alert.append(label, pre);
+        }
+      }
+
+      function showSaved(already) {
+        document.querySelector(".card").innerHTML =
+          '<div class="result" role="status">' +
+          '<div class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" width="32" height="32"><path d="M5 12.5 9.2 17 19 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>' +
+          "<h2>" + (already ? "Cédula ya registrada" : "Registro guardado") + "</h2>" +
+          "<p>" + (already
+            ? "Esta cédula ya tenía una foto guardada. No hace falta enviarla otra vez."
+            : "La cédula y la foto quedaron almacenadas.") + "</p>" +
+          '<a class="button" href="/">Nuevo registro</a></div>';
       }
 
       if (cedula) {
@@ -189,6 +238,7 @@
         imagen.addEventListener("change", () => {
           const file = imagen.files && imagen.files[0];
           const current = ++ticket;
+          blockSend = false;
           clearPreview();
           if (!file) {
             fileName.textContent = "Se abre la cámara";
@@ -211,8 +261,15 @@
             fileName.textContent = "Lista para enviar";
             fileSize.hidden = false;
             fileSize.textContent = formatSize(small.size);
-          }).catch(() => {
+          }).catch((error) => {
             if (current !== ticket) return;
+            if ((error && error.message === "heavy") || file.size > 1400 * 1024) {
+              blockSend = true;
+              fileName.textContent = "Foto muy pesada";
+              fileSize.hidden = false;
+              fileSize.textContent = "tómala de nuevo";
+              return;
+            }
             fileName.textContent = "Lista para enviar";
             fileSize.hidden = false;
             fileSize.textContent = formatSize(file.size);
@@ -221,23 +278,44 @@
       }
 
       if (form) {
+        let sending = false;
         form.addEventListener("submit", async (event) => {
-          if (form.dataset.ready === "1") return;
           event.preventDefault();
+          if (sending) return;
           if (!form.reportValidity()) return;
+          sending = true;
           const button = form.querySelector("button");
           button.disabled = true;
           button.textContent = "Preparando foto…";
           try {
             await pending;
+            const chosen = imagen.files && imagen.files[0];
+            if (blockSend || (chosen && chosen.size > 1400 * 1024)) {
+              const heavy = new Error("heavy");
+              throw heavy;
+            }
+            button.textContent = "Enviando…";
+            const response = await fetch(form.action, {
+              method: "POST",
+              body: new FormData(form),
+              headers: { "X-Requested-With": "fetch" },
+            });
+            const data = await response.json();
+            if (data.ok) {
+              showSaved(data.already);
+              return;
+            }
+            showFormError(data.error || "No se pudo enviar.", data.detail || "");
           } catch (error) {
-            button.disabled = false;
-            button.textContent = "Enviar";
-            return;
+            showFormError(
+              error && error.message === "heavy"
+                ? "La foto es muy pesada. Tómala de nuevo."
+                : "No se pudo enviar. Revisa tu conexión e inténtalo de nuevo."
+            );
           }
-          form.dataset.ready = "1";
-          button.textContent = "Enviando…";
-          form.submit();
+          sending = false;
+          button.disabled = false;
+          button.textContent = "Enviar";
         });
       }
     </script>

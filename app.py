@@ -8,7 +8,7 @@ import time
 from urllib.parse import unquote, urlparse
 
 import pymysql
-from flask import Flask, Response, abort, redirect, render_template, request, session, url_for
+from flask import Flask, Response, abort, jsonify, redirect, render_template, request, session, url_for
 from PIL import Image, ImageOps, UnidentifiedImageError
 from pymysql.err import IntegrityError
 from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
@@ -20,8 +20,8 @@ try:
 except Exception:
     register_heif_opener = None
 
-MAX_IMAGE_BYTES = 8 * 1024 * 1024
-FULL_EDGE = 1600
+MAX_IMAGE_BYTES = 2 * 1024 * 1024
+FULL_EDGE = 1280
 THUMB_EDGE = 480
 PAGE_SIZE = 12
 OPTIMIZED_NAME = "foto.jpg"
@@ -185,21 +185,27 @@ def _to_rgb(image):
 
 def _jpeg_bytes(image, quality):
     buffer = io.BytesIO()
-    image.save(buffer, format="JPEG", quality=quality, optimize=True, progressive=True)
+    image.save(buffer, format="JPEG", quality=quality, optimize=False, progressive=True)
     return buffer.getvalue()
 
 
 def prepare_image(data):
     try:
         with Image.open(io.BytesIO(data)) as image:
+            already_light = (
+                image.format == "JPEG"
+                and max(image.size) <= FULL_EDGE
+                and len(data) <= 700_000
+            )
             rgb = _to_rgb(image)
     except (UnidentifiedImageError, OSError, ValueError) as exc:
         raise ImageProcessError("No se pudo leer la foto.") from exc
-    rgb.thumbnail((FULL_EDGE, FULL_EDGE), Image.Resampling.LANCZOS)
-    full = _jpeg_bytes(rgb, 75)
+    if not already_light:
+        rgb.thumbnail((FULL_EDGE, FULL_EDGE), Image.Resampling.BILINEAR)
+    full = data if already_light else _jpeg_bytes(rgb, 68)
     thumb = rgb.copy()
-    thumb.thumbnail((THUMB_EDGE, THUMB_EDGE), Image.Resampling.LANCZOS)
-    return full, _jpeg_bytes(thumb, 60)
+    thumb.thumbnail((THUMB_EDGE, THUMB_EDGE), Image.Resampling.BILINEAR)
+    return full, _jpeg_bytes(thumb, 55)
 
 
 def image_response(data, mime):
@@ -231,7 +237,16 @@ def describe_exception(exc):
     return text[:800]
 
 
-def render_page(cedula="", error=None, detail=None, success=False, status=200):
+def render_page(cedula="", error=None, detail=None, success=False, already=False, status=200):
+    if request.headers.get("X-Requested-With") == "fetch":
+        response = jsonify(
+            ok=bool(success or already),
+            already=bool(already),
+            error=error,
+            detail=detail,
+        )
+        response.status_code = status
+        return response
     return render_template(
         "index.html",
         csrf_token=csrf_token(),
@@ -239,6 +254,7 @@ def render_page(cedula="", error=None, detail=None, success=False, status=200):
         error=error,
         detail=detail,
         success=success,
+        already=already,
     ), status
 
 
@@ -592,7 +608,6 @@ def submit():
     if not csrf_ok():
         return render_page(
             error="El formulario expiró. Actualiza la página y envíalo de nuevo.",
-            status=400,
         )
 
     cedula = normalize_cedula(request.form.get("cedula", ""))
@@ -600,21 +615,19 @@ def submit():
         return render_page(
             cedula=cedula,
             error="Escribe una cédula válida: solo números, entre 5 y 12 dígitos.",
-            status=400,
         )
 
     upload = request.files.get("imagen")
     if upload is None or not upload.filename:
-        return render_page(cedula=cedula, error="Toma una foto con la cámara.", status=400)
+        return render_page(cedula=cedula, error="Toma una foto con la cámara.")
 
     data = upload.read()
     if not data:
-        return render_page(cedula=cedula, error="La imagen está vacía.", status=400)
+        return render_page(cedula=cedula, error="La imagen está vacía.")
     if len(data) > MAX_IMAGE_BYTES:
         return render_page(
             cedula=cedula,
-            error="La imagen supera el máximo de 8 MB.",
-            status=400,
+            error="La foto es muy pesada. Tómala de nuevo.",
         )
 
     mime = detect_mime(data)
@@ -622,7 +635,6 @@ def submit():
         return render_page(
             cedula=cedula,
             error="La imagen debe ser JPG, PNG, WEBP, GIF o HEIC.",
-            status=400,
         )
 
     try:
@@ -631,18 +643,13 @@ def submit():
         return render_page(
             cedula=cedula,
             error="No se pudo leer la foto. Tómala de nuevo.",
-            status=400,
         )
     log.info("Foto lista para guardar: %s bytes -> %s bytes", len(data), len(image_bytes))
 
     try:
         save_registro(cedula, image_bytes, thumb_bytes, OPTIMIZED_NAME, "image/jpeg")
     except IntegrityError:
-        return render_page(
-            cedula=cedula,
-            error="Esta cédula ya fue registrada.",
-            status=409,
-        )
+        return render_page(success=True, already=True)
     except pymysql.MySQLError as exc:
         return report_failure(
             cedula,
@@ -663,7 +670,7 @@ def submit():
 
 @app.errorhandler(RequestEntityTooLarge)
 def too_large(_error):
-    return render_page(error="La imagen supera el máximo de 8 MB.", status=413)
+    return render_page(error="La foto es muy pesada. Tómala de nuevo.")
 
 
 @app.errorhandler(Exception)

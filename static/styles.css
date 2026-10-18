@@ -52,7 +52,6 @@ body {
 
 .blob {
   border-radius: 50%;
-  filter: blur(2px);
 }
 
 .blob-a {
