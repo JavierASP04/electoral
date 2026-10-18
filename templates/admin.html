@@ -39,11 +39,35 @@
       {% elif not registros %}
         <p class="empty">Todavía no hay fotos.</p>
       {% else %}
-        <p class="count">{{ registros|length }} registro{{ "s" if registros|length != 1 else "" }}</p>
+        <p class="count">{{ total }} registro{{ "s" if total != 1 else "" }}</p>
+        {% if pendientes %}
+          <p class="empty">Hay fotos grandes que se están reduciendo. Actualiza en un momento para verlas.</p>
+        {% endif %}
+        {% if pages > 1 %}
+          <nav class="pager">
+            {% if page > 1 %}
+              <a href="{{ url_for('admin', page=page-1) }}">Anterior</a>
+            {% else %}
+              <span></span>
+            {% endif %}
+            <span>{{ page }} / {{ pages }}</span>
+            {% if page < pages %}
+              <a href="{{ url_for('admin', page=page+1) }}">Siguiente</a>
+            {% else %}
+              <span></span>
+            {% endif %}
+          </nav>
+        {% endif %}
         <div class="gallery">
           {% for registro in registros %}
             <article class="shot">
-              <img src="{{ url_for('admin_foto', registro_id=registro.id) }}" alt="Foto de la cédula {{ registro.cedula }}">
+              {% if registro.tiene_mini %}
+                <a class="shot-link" href="{{ url_for('admin_foto', registro_id=registro.id) }}" target="_blank" rel="noopener">
+                  <img src="{{ url_for('admin_mini', registro_id=registro.id) }}" alt="Foto de la cédula {{ registro.cedula }}" loading="lazy" decoding="async">
+                </a>
+              {% else %}
+                <p class="shot-wait">Aligerando esta foto…</p>
+              {% endif %}
               <div class="shot-meta">
                 <div class="shot-id">
                   <strong>{{ registro.cedula }}</strong>
@@ -51,6 +75,7 @@
                 </div>
                 <form method="post" action="{{ url_for('admin_borrar', registro_id=registro.id) }}" onsubmit="return confirm('¿Borrar este registro?');">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <input type="hidden" name="page" value="{{ page }}">
                   <button class="delete" type="submit">Borrar</button>
                 </form>
               </div>

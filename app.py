@@ -1,25 +1,32 @@
+import io
 import logging
 import os
 import re
 import secrets
 import threading
+import time
 from urllib.parse import unquote, urlparse
 
 import pymysql
 from flask import Flask, Response, abort, redirect, render_template, request, session, url_for
+from PIL import Image, ImageOps, UnidentifiedImageError
 from pymysql.err import IntegrityError
 from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
-from werkzeug.utils import secure_filename
+
+try:
+    from pillow_heif import register_heif_opener
+
+    register_heif_opener()
+except Exception:
+    register_heif_opener = None
 
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
+FULL_EDGE = 1600
+THUMB_EDGE = 480
+PAGE_SIZE = 12
+OPTIMIZED_NAME = "foto.jpg"
+Image.MAX_IMAGE_PIXELS = 40_000_000
 CEDULA_RE = re.compile(r"^\d{5,12}$")
-MIME_EXTENSIONS = {
-    "image/jpeg": ".jpg",
-    "image/png": ".png",
-    "image/webp": ".webp",
-    "image/gif": ".gif",
-    "image/heic": ".heic",
-}
 
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "12341234")
 
@@ -33,6 +40,8 @@ logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
 log = logging.getLogger("consulta")
 if app.config["SECRET_KEY"] == "consulta-popular-dev-key":
     log.warning("SECRET_KEY sigue en el valor de desarrollo. Cámbiala antes de publicar.")
+if register_heif_opener is None:
+    log.warning("Las fotos HEIC se convertirán en el teléfono. El servidor no pudo activar ese formato.")
 
 _schema_lock = threading.Lock()
 _schema_ready = False
@@ -42,6 +51,7 @@ CREATE TABLE IF NOT EXISTS registros (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     cedula VARCHAR(12) NOT NULL,
     imagen MEDIUMBLOB NOT NULL,
+    miniatura MEDIUMBLOB NULL,
     imagen_nombre VARCHAR(255) NOT NULL,
     imagen_tipo VARCHAR(64) NOT NULL,
     creado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -122,6 +132,17 @@ def ensure_schema(connection):
             return
         with connection.cursor() as cursor:
             cursor.execute(CREATE_TABLE_SQL)
+            cursor.execute(
+                """
+                SELECT COUNT(*)
+                FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME = 'registros'
+                  AND COLUMN_NAME = 'miniatura'
+                """
+            )
+            if cursor.fetchone()[0] == 0:
+                cursor.execute("ALTER TABLE registros ADD COLUMN miniatura MEDIUMBLOB NULL")
         connection.commit()
         _schema_ready = True
 
@@ -146,11 +167,46 @@ def detect_mime(data):
     return None
 
 
-def image_filename(original_name, mime):
-    cleaned = secure_filename(original_name or "")[:255]
-    if cleaned:
-        return cleaned
-    return "imagen" + MIME_EXTENSIONS[mime]
+class ImageProcessError(Exception):
+    pass
+
+
+def _to_rgb(image):
+    image = ImageOps.exif_transpose(image)
+    if image.mode == "RGB":
+        return image
+    if image.mode in ("RGBA", "LA") or (image.mode == "P" and "transparency" in image.info):
+        rgba = image.convert("RGBA")
+        background = Image.new("RGB", rgba.size, (255, 255, 255))
+        background.paste(rgba, mask=rgba.getchannel("A"))
+        return background
+    return image.convert("RGB")
+
+
+def _jpeg_bytes(image, quality):
+    buffer = io.BytesIO()
+    image.save(buffer, format="JPEG", quality=quality, optimize=True, progressive=True)
+    return buffer.getvalue()
+
+
+def prepare_image(data):
+    try:
+        with Image.open(io.BytesIO(data)) as image:
+            rgb = _to_rgb(image)
+    except (UnidentifiedImageError, OSError, ValueError) as exc:
+        raise ImageProcessError("No se pudo leer la foto.") from exc
+    rgb.thumbnail((FULL_EDGE, FULL_EDGE), Image.Resampling.LANCZOS)
+    full = _jpeg_bytes(rgb, 75)
+    thumb = rgb.copy()
+    thumb.thumbnail((THUMB_EDGE, THUMB_EDGE), Image.Resampling.LANCZOS)
+    return full, _jpeg_bytes(thumb, 60)
+
+
+def image_response(data, mime):
+    response = Response(data, mimetype=mime or "image/jpeg")
+    response.headers["Cache-Control"] = "private, max-age=86400"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
 
 
 def csrf_token():
@@ -205,17 +261,17 @@ def report_failure(cedula, message, exc, status):
     return render_page(cedula=cedula, error=message, detail=detail, status=status)
 
 
-def save_registro(cedula, image_bytes, filename, mime):
+def save_registro(cedula, image_bytes, thumb_bytes, filename, mime):
     connection = connect()
     try:
         ensure_schema(connection)
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                INSERT INTO registros (cedula, imagen, imagen_nombre, imagen_tipo)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO registros (cedula, imagen, miniatura, imagen_nombre, imagen_tipo)
+                VALUES (%s, %s, %s, %s, %s)
                 """,
-                (cedula, image_bytes, filename, mime),
+                (cedula, image_bytes, thumb_bytes, filename, mime),
             )
         connection.commit()
     except Exception:
@@ -229,17 +285,36 @@ def admin_autenticado():
     return session.get("admin_ok") is True
 
 
-def list_registros():
+def requested_page():
+    raw = request.values.get("page", "1")
+    try:
+        return max(1, min(int(raw), 100000))
+    except (TypeError, ValueError):
+        return 1
+
+
+def list_registros(page, per_page=PAGE_SIZE):
+    page = max(1, min(page, 100000))
     connection = connect()
     try:
         ensure_schema(connection)
         with connection.cursor() as cursor:
+            cursor.execute("SELECT COUNT(*), SUM(miniatura IS NULL) FROM registros")
+            total, pendientes = cursor.fetchone()
+            total = int(total or 0)
+            pendientes = int(pendientes or 0)
+            pages = max(1, (total + per_page - 1) // per_page)
+            if page > pages:
+                page = pages
+            offset = (page - 1) * per_page
             cursor.execute(
                 """
-                SELECT id, cedula, imagen_nombre, creado_en
+                SELECT id, cedula, creado_en, (miniatura IS NOT NULL) AS tiene_mini
                 FROM registros
                 ORDER BY creado_en DESC, id DESC
-                """
+                LIMIT %s OFFSET %s
+                """,
+                (per_page, offset),
             )
             rows = cursor.fetchall()
     finally:
@@ -247,18 +322,30 @@ def list_registros():
 
     registros = []
     for row in rows:
-        creado = row[3]
+        creado = row[2]
         if hasattr(creado, "strftime"):
             creado = creado.strftime("%d/%m/%Y %H:%M")
         registros.append(
             {
                 "id": row[0],
                 "cedula": row[1],
-                "nombre": row[2],
                 "creado_en": creado or "",
+                "tiene_mini": bool(row[3]),
             }
         )
-    return registros
+    return {
+        "registros": registros,
+        "total": total,
+        "pendientes": pendientes,
+        "page": page,
+        "pages": pages,
+    }
+
+
+def _blob_bytes(value):
+    if isinstance(value, str):
+        return value.encode("latin1", "surrogateescape")
+    return value
 
 
 def fetch_imagen(registro_id):
@@ -269,9 +356,107 @@ def fetch_imagen(registro_id):
                 "SELECT imagen, imagen_tipo FROM registros WHERE id = %s",
                 (registro_id,),
             )
-            return cursor.fetchone()
+            row = cursor.fetchone()
     finally:
         connection.close()
+    if not row or row[0] is None:
+        return None
+    return _blob_bytes(row[0]), row[1]
+
+
+def fetch_miniatura(registro_id):
+    connection = connect()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT miniatura FROM registros WHERE id = %s",
+                (registro_id,),
+            )
+            row = cursor.fetchone()
+    finally:
+        connection.close()
+    if not row or row[0] is None:
+        return None
+    return _blob_bytes(row[0])
+
+
+def shrink_one():
+    connection = connect()
+    try:
+        ensure_schema(connection)
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT GET_LOCK('consulta_shrink', 1)")
+            if cursor.fetchone()[0] != 1:
+                return None
+            try:
+                cursor.execute(
+                    """
+                    SELECT id, imagen
+                    FROM registros
+                    WHERE miniatura IS NULL
+                       OR imagen_tipo <> 'image/jpeg'
+                       OR imagen_nombre <> %s
+                    ORDER BY (miniatura IS NULL) DESC, id
+                    LIMIT 1
+                    """,
+                    (OPTIMIZED_NAME,),
+                )
+                row = cursor.fetchone()
+                if not row:
+                    return False
+                registro_id, imagen = row
+                imagen = _blob_bytes(imagen)
+                try:
+                    full, thumb = prepare_image(imagen)
+                except ImageProcessError:
+                    log.error("No se pudo aligerar el registro %s", registro_id)
+                    thumb = _jpeg_bytes(Image.new("RGB", (8, 8), (255, 255, 255)), 60)
+                    cursor.execute(
+                        """
+                        UPDATE registros
+                        SET miniatura = %s, imagen_nombre = %s, imagen_tipo = 'image/jpeg'
+                        WHERE id = %s
+                        """,
+                        (thumb, OPTIMIZED_NAME, registro_id),
+                    )
+                else:
+                    cursor.execute(
+                        """
+                        UPDATE registros
+                        SET imagen = %s, miniatura = %s, imagen_nombre = %s, imagen_tipo = 'image/jpeg'
+                        WHERE id = %s
+                        """,
+                        (full, thumb, OPTIMIZED_NAME, registro_id),
+                    )
+                    log.info("Foto %s reducida de %s a %s bytes", registro_id, len(imagen), len(full))
+                connection.commit()
+                return True
+            except Exception:
+                connection.rollback()
+                raise
+            finally:
+                cursor.execute("SELECT RELEASE_LOCK('consulta_shrink')")
+                connection.commit()
+    finally:
+        connection.close()
+
+
+def shrink_loop():
+    time.sleep(8)
+    while True:
+        try:
+            result = shrink_one()
+        except Exception:
+            log.exception("No se pudo aligerar fotos guardadas")
+            time.sleep(20)
+            continue
+        if result is None:
+            time.sleep(3)
+            continue
+        if result is False:
+            log.info("Las fotos guardadas ya están aligeradas")
+            return
+        time.sleep(0.4)
 
 
 def delete_registro(registro_id):
@@ -310,13 +495,17 @@ def admin():
         ), status
 
     try:
-        registros = list_registros()
+        listed = list_registros(requested_page())
     except pymysql.MySQLError as exc:
         app.logger.error("No se pudo listar registros: %s", describe_exception(exc))
         return render_template(
             "admin.html",
             csrf_token=csrf_token(),
             registros=[],
+            total=0,
+            pendientes=0,
+            page=1,
+            pages=1,
             error="No se pudo leer la base de datos.",
             detail=describe_exception(exc),
             aviso=None,
@@ -325,10 +514,10 @@ def admin():
     return render_template(
         "admin.html",
         csrf_token=csrf_token(),
-        registros=registros,
         error=None,
         detail=None,
         aviso=request.args.get("aviso"),
+        **listed,
     )
 
 
@@ -350,7 +539,7 @@ def admin_borrar(registro_id):
             detail=describe_exception(exc),
             aviso=None,
         ), 503
-    return redirect(url_for("admin", aviso="borrado" if deleted else "ausente"))
+    return redirect(url_for("admin", aviso="borrado" if deleted else "ausente", page=requested_page()))
 
 
 @app.post("/admin/salir")
@@ -365,13 +554,26 @@ def admin_foto(registro_id):
     if not admin_autenticado():
         abort(401)
     row = fetch_imagen(registro_id)
-    if not row or row[0] is None:
+    if not row:
         abort(404)
     imagen, mime = row
-    if isinstance(imagen, str):
-        imagen = imagen.encode("latin1", "surrogateescape")
-    response = Response(imagen, mimetype=mime or "application/octet-stream")
-    response.headers["Cache-Control"] = "private, no-store"
+    return image_response(imagen, mime)
+
+
+@app.get("/admin/mini/<int:registro_id>")
+def admin_mini(registro_id):
+    if not admin_autenticado():
+        abort(401)
+    imagen = fetch_miniatura(registro_id)
+    if not imagen:
+        abort(404)
+    return image_response(imagen, "image/jpeg")
+
+
+@app.after_request
+def cache_static(response):
+    if request.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "public, max-age=86400"
     return response
 
 
@@ -424,7 +626,17 @@ def submit():
         )
 
     try:
-        save_registro(cedula, data, image_filename(upload.filename, mime), mime)
+        image_bytes, thumb_bytes = prepare_image(data)
+    except ImageProcessError:
+        return render_page(
+            cedula=cedula,
+            error="No se pudo leer la foto. Tómala de nuevo.",
+            status=400,
+        )
+    log.info("Foto lista para guardar: %s bytes -> %s bytes", len(data), len(image_bytes))
+
+    try:
+        save_registro(cedula, image_bytes, thumb_bytes, OPTIMIZED_NAME, "image/jpeg")
     except IntegrityError:
         return render_page(
             cedula=cedula,
@@ -470,6 +682,10 @@ def unexpected(exc):
     except Exception:
         app.logger.exception("No se pudo mostrar la página de error")
         return detail, 500
+
+
+if os.environ.get("SERVER_SOFTWARE", "").startswith("gunicorn"):
+    threading.Thread(target=shrink_loop, name="aligerar-fotos", daemon=True).start()
 
 
 if __name__ == "__main__":

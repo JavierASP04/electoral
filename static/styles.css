@@ -584,10 +584,36 @@ button:disabled {
   font-weight: 700;
 }
 
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 14px;
+}
+
+.pager a {
+  color: var(--navy);
+  font-weight: 700;
+  text-decoration: none;
+}
+
 .gallery {
   display: grid;
   grid-template-columns: 1fr;
   gap: 14px;
+}
+
+.shot-link {
+  display: block;
+}
+
+.shot-wait {
+  margin: 0;
+  padding: 36px 16px;
+  background: #eef3f9;
+  color: var(--ink-soft);
+  text-align: center;
 }
 
 .shot {
