@@ -23,6 +23,11 @@
       </div>
     </header>
     <main class="admin-main">
+      {% if aviso == "borrado" %}
+        <p class="notice">Registro borrado.</p>
+      {% elif aviso == "ausente" %}
+        <p class="notice">Ese registro ya no existe.</p>
+      {% endif %}
       {% if error %}
         <div class="alert" role="alert">
           <p class="alert-title">{{ error }}</p>
@@ -40,8 +45,14 @@
             <article class="shot">
               <img src="{{ url_for('admin_foto', registro_id=registro.id) }}" alt="Foto de la cédula {{ registro.cedula }}">
               <div class="shot-meta">
-                <strong>{{ registro.cedula }}</strong>
-                <span>{{ registro.creado_en }}</span>
+                <div class="shot-id">
+                  <strong>{{ registro.cedula }}</strong>
+                  <span>{{ registro.creado_en }}</span>
+                </div>
+                <form method="post" action="{{ url_for('admin_borrar', registro_id=registro.id) }}" onsubmit="return confirm('¿Borrar este registro?');">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <button class="delete" type="submit">Borrar</button>
+                </form>
               </div>
             </article>
           {% endfor %}

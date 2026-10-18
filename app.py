@@ -274,6 +274,21 @@ def fetch_imagen(registro_id):
         connection.close()
 
 
+def delete_registro(registro_id):
+    connection = connect()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("DELETE FROM registros WHERE id = %s", (registro_id,))
+            deleted = cursor.rowcount
+        connection.commit()
+        return deleted
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
 @app.route("/admin", methods=["GET", "POST"])
 def admin():
     error = None
@@ -304,6 +319,7 @@ def admin():
             registros=[],
             error="No se pudo leer la base de datos.",
             detail=describe_exception(exc),
+            aviso=None,
         ), 503
 
     return render_template(
@@ -312,7 +328,29 @@ def admin():
         registros=registros,
         error=None,
         detail=None,
+        aviso=request.args.get("aviso"),
     )
+
+
+@app.post("/admin/borrar/<int:registro_id>")
+def admin_borrar(registro_id):
+    if not admin_autenticado():
+        abort(401)
+    if not csrf_ok():
+        return redirect(url_for("admin"))
+    try:
+        deleted = delete_registro(registro_id)
+    except pymysql.MySQLError as exc:
+        app.logger.error("No se pudo borrar el registro: %s", describe_exception(exc))
+        return render_template(
+            "admin.html",
+            csrf_token=csrf_token(),
+            registros=[],
+            error="No se pudo borrar el registro.",
+            detail=describe_exception(exc),
+            aviso=None,
+        ), 503
+    return redirect(url_for("admin", aviso="borrado" if deleted else "ausente"))
 
 
 @app.post("/admin/salir")

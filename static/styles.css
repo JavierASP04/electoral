@@ -575,6 +575,15 @@ button:disabled {
   color: var(--ink-soft);
 }
 
+.notice {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: #e8f6ee;
+  color: #146c43;
+  font-weight: 700;
+}
+
 .gallery {
   display: grid;
   grid-template-columns: 1fr;
@@ -598,14 +607,36 @@ button:disabled {
 
 .shot-meta {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 10px;
   padding: 12px 14px 14px;
 }
 
+.shot-id {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
 .shot-meta span {
   color: var(--ink-soft);
   font-size: 0.92rem;
+}
+
+.shot-meta form {
+  margin: 0;
+}
+
+.delete {
+  width: auto;
+  min-height: 40px;
+  margin: 0;
+  padding: 8px 14px;
+  border-radius: 12px;
+  background: #d21f3c;
+  box-shadow: none;
 }
 
 @media (min-width: 700px) {
