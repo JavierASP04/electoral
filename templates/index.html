@@ -33,7 +33,7 @@
         <div class="header-inner">
           <p class="kicker">Octubre 2026</p>
           <h1>Consulta Popular Octubre 2026</h1>
-          <p class="lede">Escribe tu cédula y toma una foto.</p>
+          <p class="lede">Escribe tu cédula.</p>
         </div>
         <svg class="wave" viewBox="0 0 360 48" preserveAspectRatio="none" aria-hidden="true">
           <path d="M0 24c40 16 70-16 120-8s70 22 120 8 70-20 120-6v30H0V24z" fill="#f4f7fb"/>
@@ -53,7 +53,7 @@
                 </svg>
               </div>
               <h2>{{ "Cédula ya registrada" if already else "Registro guardado" }}</h2>
-              <p>{{ "Esta cédula ya tenía una foto guardada. No hace falta enviarla otra vez." if already else "La cédula y la foto quedaron almacenadas." }}</p>
+              <p>{{ "Esta cédula ya estaba registrada. No hace falta enviarla otra vez." if already else "La cédula quedó registrada." }}</p>
               <a class="button" href="{{ url_for('index') }}">Nuevo registro</a>
             </div>
           {% else %}
@@ -67,11 +67,11 @@
               </div>
             {% endif %}
 
-            <form method="post" action="{{ url_for('submit') }}" enctype="multipart/form-data" novalidate>
+            <form method="post" action="{{ url_for('submit') }}" novalidate>
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 
               <div class="field">
-                <label for="cedula"><span class="step">1</span> Cédula</label>
+                <label for="cedula">Cédula</label>
                 <div class="input-wrap">
                   <svg class="field-icon" viewBox="0 0 24 24" aria-hidden="true">
                     <rect x="5" y="3.5" width="14" height="17" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/>
@@ -93,35 +93,8 @@
                 <p class="help">De 5 a 12 números, sin puntos ni espacios.</p>
               </div>
 
-              <div class="field">
-                <span class="label" id="imagen-label"><span class="step">2</span> Foto</span>
-                <label class="dropzone" id="dropzone" for="imagen">
-                  <input
-                    id="imagen"
-                    name="imagen"
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    aria-labelledby="imagen-label"
-                    required
-                  >
-                  <span class="dropzone-icon" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" width="36" height="36">
-                      <path d="M4 8.2A2.2 2.2 0 0 1 6.2 6h2l1.1-1.6h5.4L15.8 6h2A2.2 2.2 0 0 1 20 8.2v8.6A2.2 2.2 0 0 1 17.8 19H6.2A2.2 2.2 0 0 1 4 16.8V8.2z" fill="none" stroke="currentColor" stroke-width="1.6"/>
-                      <circle cx="12" cy="12.5" r="3.1" fill="none" stroke="currentColor" stroke-width="1.6"/>
-                    </svg>
-                  </span>
-                  <span class="dropzone-title">Toca para tomar la foto</span>
-                  <span class="dropzone-hint" id="file-hint">
-                    <span id="file-name">Se abre la cámara</span>
-                    <span id="file-size">se reduce antes de enviar</span>
-                  </span>
-                  <img id="preview" alt="Vista previa de la foto" hidden>
-                </label>
-              </div>
-
               <button type="submit">Enviar</button>
-              <p class="note">Solo se guardan la cédula y la foto.</p>
+              <p class="note">Solo se guarda la cédula.</p>
             </form>
           {% endif %}
         </section>
@@ -137,59 +110,12 @@
 
     <script>
       const cedula = document.getElementById("cedula");
-      const imagen = document.getElementById("imagen");
-      const preview = document.getElementById("preview");
-      const fileName = document.getElementById("file-name");
-      const fileSize = document.getElementById("file-size");
-      const dropzone = document.getElementById("dropzone");
       const form = document.querySelector("form");
-      let pending = Promise.resolve();
-      let ticket = 0;
-      let previewUrl = "";
-      let blockSend = false;
 
-      function formatSize(bytes) {
-        if (bytes < 1024 * 1024) return Math.max(1, Math.round(bytes / 1024)) + " KB";
-        return (bytes / (1024 * 1024)).toFixed(1) + " MB";
-      }
-
-      function clearPreview() {
-        if (previewUrl) URL.revokeObjectURL(previewUrl);
-        previewUrl = "";
-        preview.hidden = true;
-        preview.removeAttribute("src");
-        dropzone.classList.remove("has-file");
-      }
-
-      function jpegFile(blob) {
-        return new File([blob], "foto.jpg", { type: "image/jpeg", lastModified: Date.now() });
-      }
-
-      async function compressFile(file) {
-        if (file.type === "image/jpeg" && file.size <= 350 * 1024) return file;
-        const bitmap = await createImageBitmap(file);
-        try {
-          const scale = Math.min(1, 1280 / Math.max(bitmap.width, bitmap.height));
-          const width = Math.max(1, Math.round(bitmap.width * scale));
-          const height = Math.max(1, Math.round(bitmap.height * scale));
-          const canvas = document.createElement("canvas");
-          canvas.width = width;
-          canvas.height = height;
-          canvas.getContext("2d", { alpha: false }).drawImage(bitmap, 0, 0, width, height);
-          let blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.62));
-          if (blob && blob.size > 900 * 1024) {
-            blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.45));
-          }
-          if (!blob) return file;
-          if (blob.size > 1400 * 1024) {
-            const error = new Error("heavy");
-            throw error;
-          }
-          if (blob.size >= file.size && file.size <= 1400 * 1024) return file;
-          return jpegFile(blob);
-        } finally {
-          bitmap.close();
-        }
+      if (cedula) {
+        cedula.addEventListener("input", () => {
+          cedula.value = cedula.value.replace(/\D/g, "").slice(0, 12);
+        });
       }
 
       function showFormError(message, detail) {
@@ -223,58 +149,9 @@
           '<div class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" width="32" height="32"><path d="M5 12.5 9.2 17 19 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>' +
           "<h2>" + (already ? "Cédula ya registrada" : "Registro guardado") + "</h2>" +
           "<p>" + (already
-            ? "Esta cédula ya tenía una foto guardada. No hace falta enviarla otra vez."
-            : "La cédula y la foto quedaron almacenadas.") + "</p>" +
+            ? "Esta cédula ya estaba registrada. No hace falta enviarla otra vez."
+            : "La cédula quedó registrada.") + "</p>" +
           '<a class="button" href="/">Nuevo registro</a></div>';
-      }
-
-      if (cedula) {
-        cedula.addEventListener("input", () => {
-          cedula.value = cedula.value.replace(/\D/g, "").slice(0, 12);
-        });
-      }
-
-      if (imagen) {
-        imagen.addEventListener("change", () => {
-          const file = imagen.files && imagen.files[0];
-          const current = ++ticket;
-          blockSend = false;
-          clearPreview();
-          if (!file) {
-            fileName.textContent = "Se abre la cámara";
-            fileSize.hidden = false;
-            fileSize.textContent = "se reduce antes de enviar";
-            pending = Promise.resolve();
-            return;
-          }
-          fileName.textContent = "Preparando foto…";
-          fileSize.hidden = true;
-          pending = compressFile(file).then((small) => {
-            if (current !== ticket) return;
-            const transfer = new DataTransfer();
-            transfer.items.add(small);
-            imagen.files = transfer.files;
-            previewUrl = URL.createObjectURL(small);
-            preview.src = previewUrl;
-            preview.hidden = false;
-            dropzone.classList.add("has-file");
-            fileName.textContent = "Lista para enviar";
-            fileSize.hidden = false;
-            fileSize.textContent = formatSize(small.size);
-          }).catch((error) => {
-            if (current !== ticket) return;
-            if ((error && error.message === "heavy") || file.size > 1400 * 1024) {
-              blockSend = true;
-              fileName.textContent = "Foto muy pesada";
-              fileSize.hidden = false;
-              fileSize.textContent = "tómala de nuevo";
-              return;
-            }
-            fileName.textContent = "Lista para enviar";
-            fileSize.hidden = false;
-            fileSize.textContent = formatSize(file.size);
-          });
-        });
       }
 
       if (form) {
@@ -286,15 +163,8 @@
           sending = true;
           const button = form.querySelector("button");
           button.disabled = true;
-          button.textContent = "Preparando foto…";
+          button.textContent = "Enviando…";
           try {
-            await pending;
-            const chosen = imagen.files && imagen.files[0];
-            if (blockSend || (chosen && chosen.size > 1400 * 1024)) {
-              const heavy = new Error("heavy");
-              throw heavy;
-            }
-            button.textContent = "Enviando…";
             const response = await fetch(form.action, {
               method: "POST",
               body: new FormData(form),
@@ -307,11 +177,7 @@
             }
             showFormError(data.error || "No se pudo enviar.", data.detail || "");
           } catch (error) {
-            showFormError(
-              error && error.message === "heavy"
-                ? "La foto es muy pesada. Tómala de nuevo."
-                : "No se pudo enviar. Revisa tu conexión e inténtalo de nuevo."
-            );
+            showFormError("No se pudo enviar. Revisa tu conexión e inténtalo de nuevo.");
           }
           sending = false;
           button.disabled = false;

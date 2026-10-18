@@ -50,10 +50,10 @@ CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS registros (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     cedula VARCHAR(12) NOT NULL,
-    imagen MEDIUMBLOB NOT NULL,
+    imagen MEDIUMBLOB NULL,
     miniatura MEDIUMBLOB NULL,
-    imagen_nombre VARCHAR(255) NOT NULL,
-    imagen_tipo VARCHAR(64) NOT NULL,
+    imagen_nombre VARCHAR(255) NULL,
+    imagen_tipo VARCHAR(64) NULL,
     creado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     UNIQUE KEY uq_registros_cedula (cedula)
@@ -143,6 +143,25 @@ def ensure_schema(connection):
             )
             if cursor.fetchone()[0] == 0:
                 cursor.execute("ALTER TABLE registros ADD COLUMN miniatura MEDIUMBLOB NULL")
+            cursor.execute(
+                """
+                SELECT IS_NULLABLE
+                FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME = 'registros'
+                  AND COLUMN_NAME = 'imagen'
+                """
+            )
+            nullable = cursor.fetchone()
+            if nullable and nullable[0] == "NO":
+                cursor.execute(
+                    """
+                    ALTER TABLE registros
+                      MODIFY imagen MEDIUMBLOB NULL,
+                      MODIFY imagen_nombre VARCHAR(255) NULL,
+                      MODIFY imagen_tipo VARCHAR(64) NULL
+                    """
+                )
         connection.commit()
         _schema_ready = True
 
@@ -277,17 +296,14 @@ def report_failure(cedula, message, exc, status):
     return render_page(cedula=cedula, error=message, detail=detail, status=status)
 
 
-def save_registro(cedula, image_bytes, thumb_bytes, filename, mime):
+def save_registro(cedula):
     connection = connect()
     try:
         ensure_schema(connection)
         with connection.cursor() as cursor:
             cursor.execute(
-                """
-                INSERT INTO registros (cedula, imagen, miniatura, imagen_nombre, imagen_tipo)
-                VALUES (%s, %s, %s, %s, %s)
-                """,
-                (cedula, image_bytes, thumb_bytes, filename, mime),
+                "INSERT INTO registros (cedula) VALUES (%s)",
+                (cedula,),
             )
         connection.commit()
     except Exception:
@@ -315,7 +331,9 @@ def list_registros(page, per_page=PAGE_SIZE):
     try:
         ensure_schema(connection)
         with connection.cursor() as cursor:
-            cursor.execute("SELECT COUNT(*), SUM(miniatura IS NULL) FROM registros")
+            cursor.execute(
+                "SELECT COUNT(*), SUM(imagen IS NOT NULL AND miniatura IS NULL) FROM registros"
+            )
             total, pendientes = cursor.fetchone()
             total = int(total or 0)
             pendientes = int(pendientes or 0)
@@ -325,7 +343,9 @@ def list_registros(page, per_page=PAGE_SIZE):
             offset = (page - 1) * per_page
             cursor.execute(
                 """
-                SELECT id, cedula, creado_en, (miniatura IS NOT NULL) AS tiene_mini
+                SELECT id, cedula, creado_en,
+                       (miniatura IS NOT NULL) AS tiene_mini,
+                       (imagen IS NOT NULL) AS tiene_imagen
                 FROM registros
                 ORDER BY creado_en DESC, id DESC
                 LIMIT %s OFFSET %s
@@ -347,6 +367,7 @@ def list_registros(page, per_page=PAGE_SIZE):
                 "cedula": row[1],
                 "creado_en": creado or "",
                 "tiene_mini": bool(row[3]),
+                "tiene_imagen": bool(row[4]),
             }
         )
     return {
@@ -409,9 +430,12 @@ def shrink_one():
                     """
                     SELECT id, imagen
                     FROM registros
-                    WHERE miniatura IS NULL
-                       OR imagen_tipo <> 'image/jpeg'
-                       OR imagen_nombre <> %s
+                    WHERE imagen IS NOT NULL
+                      AND (
+                        miniatura IS NULL
+                        OR imagen_tipo <> 'image/jpeg'
+                        OR imagen_nombre <> %s
+                      )
                     ORDER BY (miniatura IS NULL) DESC, id
                     LIMIT 1
                     """,
@@ -617,37 +641,8 @@ def submit():
             error="Escribe una cédula válida: solo números, entre 5 y 12 dígitos.",
         )
 
-    upload = request.files.get("imagen")
-    if upload is None or not upload.filename:
-        return render_page(cedula=cedula, error="Toma una foto con la cámara.")
-
-    data = upload.read()
-    if not data:
-        return render_page(cedula=cedula, error="La imagen está vacía.")
-    if len(data) > MAX_IMAGE_BYTES:
-        return render_page(
-            cedula=cedula,
-            error="La foto es muy pesada. Tómala de nuevo.",
-        )
-
-    mime = detect_mime(data)
-    if mime is None:
-        return render_page(
-            cedula=cedula,
-            error="La imagen debe ser JPG, PNG, WEBP, GIF o HEIC.",
-        )
-
     try:
-        image_bytes, thumb_bytes = prepare_image(data)
-    except ImageProcessError:
-        return render_page(
-            cedula=cedula,
-            error="No se pudo leer la foto. Tómala de nuevo.",
-        )
-    log.info("Foto lista para guardar: %s bytes -> %s bytes", len(data), len(image_bytes))
-
-    try:
-        save_registro(cedula, image_bytes, thumb_bytes, OPTIMIZED_NAME, "image/jpeg")
+        save_registro(cedula)
     except IntegrityError:
         return render_page(success=True, already=True)
     except pymysql.MySQLError as exc:

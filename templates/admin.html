@@ -37,7 +37,7 @@
           {% endif %}
         </div>
       {% elif not registros %}
-        <p class="empty">Todavía no hay fotos.</p>
+        <p class="empty">Todavía no hay registros.</p>
       {% else %}
         <p class="count">{{ total }} registro{{ "s" if total != 1 else "" }}</p>
         {% if pendientes %}
@@ -65,7 +65,7 @@
                 <a class="shot-link" href="{{ url_for('admin_foto', registro_id=registro.id) }}" target="_blank" rel="noopener">
                   <img src="{{ url_for('admin_mini', registro_id=registro.id) }}" alt="Foto de la cédula {{ registro.cedula }}" loading="lazy" decoding="async">
                 </a>
-              {% else %}
+              {% elif registro.tiene_imagen %}
                 <p class="shot-wait">Aligerando esta foto…</p>
               {% endif %}
               <div class="shot-meta">
