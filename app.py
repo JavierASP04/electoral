@@ -6,7 +6,7 @@ import threading
 from urllib.parse import unquote, urlparse
 
 import pymysql
-from flask import Flask, render_template, request, session
+from flask import Flask, Response, abort, redirect, render_template, request, session, url_for
 from pymysql.err import IntegrityError
 from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
 from werkzeug.utils import secure_filename
@@ -20,6 +20,8 @@ MIME_EXTENSIONS = {
     "image/gif": ".gif",
     "image/heic": ".heic",
 }
+
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "12341234")
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "consulta-popular-dev-key")
@@ -221,6 +223,118 @@ def save_registro(cedula, image_bytes, filename, mime):
         raise
     finally:
         connection.close()
+
+
+def admin_autenticado():
+    return session.get("admin_ok") is True
+
+
+def list_registros():
+    connection = connect()
+    try:
+        ensure_schema(connection)
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT id, cedula, imagen_nombre, creado_en
+                FROM registros
+                ORDER BY creado_en DESC, id DESC
+                """
+            )
+            rows = cursor.fetchall()
+    finally:
+        connection.close()
+
+    registros = []
+    for row in rows:
+        creado = row[3]
+        if hasattr(creado, "strftime"):
+            creado = creado.strftime("%d/%m/%Y %H:%M")
+        registros.append(
+            {
+                "id": row[0],
+                "cedula": row[1],
+                "nombre": row[2],
+                "creado_en": creado or "",
+            }
+        )
+    return registros
+
+
+def fetch_imagen(registro_id):
+    connection = connect()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT imagen, imagen_tipo FROM registros WHERE id = %s",
+                (registro_id,),
+            )
+            return cursor.fetchone()
+    finally:
+        connection.close()
+
+
+@app.route("/admin", methods=["GET", "POST"])
+def admin():
+    error = None
+    if request.method == "POST" and request.form.get("action") == "entrar":
+        if not csrf_ok():
+            error = "El formulario expiró. Actualiza la página."
+        elif secrets.compare_digest(request.form.get("password", ""), ADMIN_PASSWORD):
+            session["admin_ok"] = True
+            return redirect(url_for("admin"))
+        else:
+            error = "Contraseña incorrecta."
+
+    if not admin_autenticado():
+        status = 401 if error == "Contraseña incorrecta." else 200
+        return render_template(
+            "admin_login.html",
+            csrf_token=csrf_token(),
+            error=error,
+        ), status
+
+    try:
+        registros = list_registros()
+    except pymysql.MySQLError as exc:
+        app.logger.error("No se pudo listar registros: %s", describe_exception(exc))
+        return render_template(
+            "admin.html",
+            csrf_token=csrf_token(),
+            registros=[],
+            error="No se pudo leer la base de datos.",
+            detail=describe_exception(exc),
+        ), 503
+
+    return render_template(
+        "admin.html",
+        csrf_token=csrf_token(),
+        registros=registros,
+        error=None,
+        detail=None,
+    )
+
+
+@app.post("/admin/salir")
+def admin_salir():
+    if csrf_ok():
+        session.pop("admin_ok", None)
+    return redirect(url_for("admin"))
+
+
+@app.get("/admin/foto/<int:registro_id>")
+def admin_foto(registro_id):
+    if not admin_autenticado():
+        abort(401)
+    row = fetch_imagen(registro_id)
+    if not row or row[0] is None:
+        abort(404)
+    imagen, mime = row
+    if isinstance(imagen, str):
+        imagen = imagen.encode("latin1", "surrogateescape")
+    response = Response(imagen, mimetype=mime or "application/octet-stream")
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
 
 
 @app.get("/health")

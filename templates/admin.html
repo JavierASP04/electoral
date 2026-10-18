@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#0c4c9c">
+    <meta name="robots" content="noindex">
+    <title>Fotos registradas · Consulta Popular</title>
+    <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  </head>
+  <body class="admin-body">
+    <header class="site-header admin-header">
+      <div class="admin-top">
+        <div>
+          <p class="kicker">Consulta Popular</p>
+          <h1>Fotos registradas</h1>
+        </div>
+        <form method="post" action="{{ url_for('admin_salir') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="logout" type="submit">Salir</button>
+        </form>
+      </div>
+    </header>
+    <main class="admin-main">
+      {% if error %}
+        <div class="alert" role="alert">
+          <p class="alert-title">{{ error }}</p>
+          {% if detail %}
+            <p class="alert-label">Qué falló</p>
+            <pre class="alert-detail">{{ detail }}</pre>
+          {% endif %}
+        </div>
+      {% elif not registros %}
+        <p class="empty">Todavía no hay fotos.</p>
+      {% else %}
+        <p class="count">{{ registros|length }} registro{{ "s" if registros|length != 1 else "" }}</p>
+        <div class="gallery">
+          {% for registro in registros %}
+            <article class="shot">
+              <img src="{{ url_for('admin_foto', registro_id=registro.id) }}" alt="Foto de la cédula {{ registro.cedula }}">
+              <div class="shot-meta">
+                <strong>{{ registro.cedula }}</strong>
+                <span>{{ registro.creado_en }}</span>
+              </div>
+            </article>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </main>
+  </body>
+</html>

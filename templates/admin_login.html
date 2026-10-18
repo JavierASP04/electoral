@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#0c4c9c">
+    <meta name="robots" content="noindex">
+    <title>Acceso · Consulta Popular</title>
+    <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  </head>
+  <body>
+    <div class="phone">
+      <header class="site-header">
+        <div class="header-inner">
+          <p class="kicker">Consulta Popular</p>
+          <h1>Acceso</h1>
+          <p class="lede">Escribe la contraseña para ver las fotos.</p>
+        </div>
+        <svg class="wave" viewBox="0 0 360 48" preserveAspectRatio="none" aria-hidden="true">
+          <path d="M0 24c40 16 70-16 120-8s70 22 120 8 70-20 120-6v30H0V24z" fill="#f4f7fb"/>
+        </svg>
+      </header>
+      <main>
+        <section class="card">
+          {% if error %}
+            <div class="alert" role="alert">
+              <p class="alert-title">{{ error }}</p>
+            </div>
+          {% endif %}
+          <form method="post" action="{{ url_for('admin') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="action" value="entrar">
+            <div class="field">
+              <label for="password">Contraseña</label>
+              <input id="password" class="password-field" name="password" type="password" autocomplete="current-password" required>
+            </div>
+            <button type="submit">Entrar</button>
+          </form>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>
