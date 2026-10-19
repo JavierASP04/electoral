@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#0c4c9c">
+    <meta name="robots" content="noindex">
+    <title>Gráficos · Consulta Popular</title>
+    <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  </head>
+  <body class="admin-body">
+    <header class="site-header admin-header">
+      <div class="admin-top">
+        <div>
+          <p class="kicker">Consulta Popular</p>
+          <h1>Participación</h1>
+        </div>
+        <div class="admin-actions">
+          <a class="logout" href="{{ url_for('admin') }}">Registros</a>
+          <form method="post" action="{{ url_for('admin_salir') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="logout" type="submit">Salir</button>
+          </form>
+        </div>
+      </div>
+    </header>
+    <main class="admin-main">
+      {% if error %}
+        <div class="alert" role="alert">
+          <p class="alert-title">{{ error }}</p>
+          {% if detail %}
+            <p class="alert-label">Qué falló</p>
+            <pre class="alert-detail">{{ detail }}</pre>
+          {% endif %}
+        </div>
+      {% else %}
+        <p class="chart-note">Hora local, 4 horas menos que el reloj del servidor. Actualizado a las {{ now_label }}.</p>
+        <div class="stat-row">
+          <article class="stat">
+            <span>Ayer desde las 8:00</span>
+            <strong>{{ period_total }}</strong>
+          </article>
+          <article class="stat">
+            <span>Todo ayer</span>
+            <strong>{{ yesterday_total }}</strong>
+          </article>
+          <article class="stat">
+            <span>Hoy</span>
+            <strong>{{ today_total }}</strong>
+          </article>
+          <article class="stat">
+            <span>Total general</span>
+            <strong>{{ all_total }}</strong>
+          </article>
+        </div>
+
+        <section class="chart-card">
+          <h2>Participación de ayer</h2>
+          <p class="chart-note">{{ yesterday_label }}. Cortes de dos horas desde las 8:00. {% if peak %}La franja más alta fue {{ peak.range }}, con {{ peak.total }} registros.{% else %}No hubo registros desde las 8:00.{% endif %}</p>
+          {{ chart_main }}
+          <table class="chart-table">
+            <thead>
+              <tr><th>Franja</th><th>Registros</th></tr>
+            </thead>
+            <tbody>
+              {% for item in series %}
+                <tr>
+                  <th>{{ item.range }}</th>
+                  <td>{{ item.total }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </section>
+
+        <section class="chart-card">
+          <h2>Acumulado de ayer</h2>
+          <p class="chart-note">Cómo fue sumando la participación desde las 8:00.</p>
+          {{ chart_cumulative }}
+        </section>
+
+        <section class="chart-card">
+          <h2>Ayer y hoy</h2>
+          <p class="chart-note">La misma franja en los dos días. Las horas de hoy que todavía no llegan quedan en cero.</p>
+          <p class="legend"><span><i class="swatch-ayer"></i>Ayer</span><span><i class="swatch-hoy"></i>Hoy</span></p>
+          {{ chart_compare }}
+        </section>
+
+        <section class="chart-card">
+          <h2>Partes del día de ayer</h2>
+          <p class="chart-note">Incluye la madrugada, antes de las 8:00.</p>
+          {{ chart_bands }}
+        </section>
+
+        <section class="chart-card">
+          <h2>Participación por día</h2>
+          <p class="chart-note">Cada barra es un día completo en la hora local.</p>
+          {{ chart_days }}
+        </section>
+      {% endif %}
+    </main>
+  </body>
+</html>

@@ -546,6 +546,26 @@ button:disabled {
   text-align: left;
 }
 
+.admin-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+a.logout {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  min-height: 44px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: #ffffff;
+  color: var(--navy);
+  font-weight: 700;
+  text-decoration: none;
+}
+
 .admin-header h1 {
   margin: 0;
   max-width: none;
@@ -566,6 +586,99 @@ button:disabled {
 .admin-main {
   width: min(1100px, calc(100% - 24px));
   margin: 20px auto 40px;
+}
+
+.stat-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.stat {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #fff;
+}
+
+.stat span {
+  color: var(--ink-soft);
+  font-size: 0.88rem;
+}
+
+.stat strong {
+  display: block;
+  margin-top: 4px;
+  color: var(--navy);
+  font-size: 1.55rem;
+}
+
+.chart-card {
+  margin: 0 0 14px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: #fff;
+}
+
+.chart-card h2 {
+  margin: 0 0 4px;
+  font-size: 1.15rem;
+}
+
+.chart-note {
+  margin: 0 0 14px;
+  color: var(--ink-soft);
+}
+
+.chart-card .chart-note {
+  margin: 0 0 12px;
+}
+
+.chart-card svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.legend {
+  display: flex;
+  gap: 16px;
+  margin: 0 0 8px;
+  color: var(--ink-soft);
+  font-size: 0.92rem;
+}
+
+.legend i {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-right: 6px;
+  border-radius: 4px;
+  vertical-align: -1px;
+}
+
+.swatch-ayer { background: #0c4c9c; }
+.swatch-hoy { background: #d21f3c; }
+
+.chart-table {
+  width: 100%;
+  margin-top: 12px;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+
+.chart-table th,
+.chart-table td {
+  padding: 8px 6px;
+  border-top: 1px solid var(--line);
+  text-align: left;
+}
+
+.chart-table td:last-child,
+.chart-table th:last-child {
+  text-align: right;
 }
 
 .count,
