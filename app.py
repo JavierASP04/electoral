@@ -769,9 +769,35 @@ def build_participation(rows, now):
     }
 
 
+def latest_registration(day):
+    connection = connect()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                f"""
+                SELECT MAX(creado_en - INTERVAL {CLOCK_AHEAD_HOURS} HOUR)
+                FROM registros
+                WHERE DATE(creado_en - INTERVAL {CLOCK_AHEAD_HOURS} HOUR) = %s
+                """,
+                (day,),
+            )
+            row = cursor.fetchone()
+    finally:
+        connection.close()
+    if not row or row[0] is None:
+        return None
+    value = row[0]
+    if isinstance(value, datetime):
+        return value.replace(microsecond=0)
+    return datetime.strptime(str(value)[:19], "%Y-%m-%d %H:%M:%S")
+
+
 def participation_report(now=None):
     moment = now or local_now()
-    return build_participation(participation_counts(), moment)
+    report = build_participation(participation_counts(), moment)
+    latest = latest_registration(moment.date())
+    report["last_today"] = latest.strftime("%H:%M") if latest else None
+    return report
 
 
 @app.route("/admin", methods=["GET", "POST"])

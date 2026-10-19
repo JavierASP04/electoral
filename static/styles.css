@@ -614,6 +614,10 @@ a.logout {
   font-size: 1.55rem;
 }
 
+.stat-wide {
+  grid-column: 1 / -1;
+}
+
 .chart-card {
   margin: 0 0 14px;
   padding: 16px;

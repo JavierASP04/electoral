@@ -37,6 +37,10 @@
       {% else %}
         <p class="chart-note">Hora local, 4 horas menos que el reloj del servidor. Actualizado a las {{ now_label }}.</p>
         <div class="stat-row">
+          <article class="stat stat-wide">
+            <span>Último registro de hoy</span>
+            <strong>{{ last_today if last_today else "Sin registros" }}</strong>
+          </article>
           <article class="stat">
             <span>Ayer desde las 8:00</span>
             <strong>{{ period_total }}</strong>
