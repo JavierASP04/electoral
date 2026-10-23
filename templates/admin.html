@@ -18,6 +18,10 @@
         </div>
         <div class="admin-actions">
           <a class="logout" href="{{ url_for('admin_grafico') }}">Gráficos</a>
+          <form method="post" action="{{ url_for('admin_excel') }}" onsubmit="this.querySelector('button').textContent='Generando…';">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="logout" type="submit">Excel</button>
+          </form>
           <form method="post" action="{{ url_for('admin_salir') }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <button class="logout" type="submit">Salir</button>

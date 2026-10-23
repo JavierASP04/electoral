@@ -113,7 +113,7 @@ def db_settings():
     }
 
 
-def connect():
+def connect(read_timeout=30):
     settings = db_settings()
     if not settings["user"] or not settings["database"]:
         raise pymysql.err.OperationalError(
@@ -128,7 +128,7 @@ def connect():
         charset="utf8mb4",
         autocommit=False,
         connect_timeout=5,
-        read_timeout=30,
+        read_timeout=read_timeout,
         write_timeout=60,
         binary_prefix=True,
     )
@@ -845,6 +845,102 @@ def admin():
         aviso=request.args.get("aviso"),
         **listed,
     )
+
+
+def cedulas_workbook(rows):
+    from openpyxl import Workbook
+    from openpyxl.cell import WriteOnlyCell
+
+    book = Workbook(write_only=True)
+    sheet = book.create_sheet("Cédulas")
+    sheet.freeze_panes = "A2"
+    sheet.append(["Cédula", "Fecha", "Hora"])
+    for cedula, creado in rows:
+        cedula_cell = WriteOnlyCell(sheet, value=str(cedula or ""))
+        cedula_cell.number_format = "@"
+        if isinstance(creado, datetime):
+            fecha = creado.strftime("%d/%m/%Y")
+            hora = creado.strftime("%H:%M")
+        else:
+            fecha = ""
+            hora = ""
+        sheet.append([cedula_cell, fecha, hora])
+    buffer = io.BytesIO()
+    book.save(buffer)
+    return buffer.getvalue()
+
+
+def iter_cedulas():
+    setup = connect()
+    try:
+        ensure_schema(setup)
+    finally:
+        setup.close()
+
+    connection = connect(read_timeout=120)
+    try:
+        with connection.cursor(pymysql.cursors.SSCursor) as cursor:
+            cursor.execute(
+                f"""
+                SELECT cedula, creado_en - INTERVAL {CLOCK_AHEAD_HOURS} HOUR
+                FROM registros
+                ORDER BY creado_en, id
+                """
+            )
+            while True:
+                batch = cursor.fetchmany(1000)
+                if not batch:
+                    break
+                yield from batch
+    finally:
+        connection.close()
+
+
+def export_cedulas_xlsx():
+    count = 0
+
+    def rows():
+        nonlocal count
+        for row in iter_cedulas():
+            count += 1
+            yield row
+
+    payload = cedulas_workbook(rows())
+    log.info("Excel de cédulas: %s filas", count)
+    return payload
+
+
+@app.post("/admin/excel")
+def admin_excel():
+    if not admin_autenticado():
+        abort(401)
+    if not csrf_ok():
+        return redirect(url_for("admin"))
+    try:
+        payload = export_cedulas_xlsx()
+    except pymysql.MySQLError as exc:
+        app.logger.error("No se pudo generar el Excel: %s", describe_exception(exc))
+        return render_template(
+            "admin.html",
+            csrf_token=csrf_token(),
+            registros=[],
+            total=0,
+            pendientes=0,
+            page=1,
+            pages=1,
+            error="No se pudo generar el Excel.",
+            detail=describe_exception(exc),
+            aviso=None,
+        ), 503
+    filename = f"cedulas-{local_now():%Y-%m-%d}.xlsx"
+    response = Response(
+        payload,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
 
 
 @app.get("/admin/grafico")
